@@ -385,6 +385,37 @@
     </button>
   </div>
 
+  <!-- Sharing Popup Overlay (Android Specific Flow) -->
+  <div class="share-popup-overlay" id="sharePopupOverlay">
+    <div class="share-popup">
+      <div class="share-popup-header">
+        <div class="success-icon">✅</div>
+        <h3 id="sharePopupTitle">Report Downloaded!</h3>
+        <button class="close-popup-btn" id="closeSharePopup">✕</button>
+      </div>
+      <div class="share-popup-body">
+        <p class="file-info">
+          <span class="file-name-label">File:</span>
+          <strong id="sharePopupFilename" class="highlight-text">DSR_Mahesh_March_2025.xlsx</strong>
+        </p>
+        <p class="path-info">
+          <span class="path-label">Location:</span><br>
+          <code class="path-text">Internal Storage > Downloads</code>
+        </p>
+
+        <div class="share-actions-grid">
+          <button class="btn btn-gmail-intent" id="openGmailBtn">
+            <span class="icon">📧</span> Open Gmail
+          </button>
+          <button class="btn btn-outlook-intent" id="openOutlookBtn">
+            <span class="icon">📨</span> Open Outlook
+          </button>
+        </div>
+        <p class="helper-text">Attach the downloaded file from your Downloads folder.</p>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toastContainer"></div>
 
   <script type="module" src="app.js"></script>

@@ -656,43 +656,53 @@ import {
 
   async function shareGeneralExcel(data) {
     if (!data) { showToast('No report data.', 'error'); return; }
-    showToast('Preparing Excel for Sharing...', 'success');
+    showToast('Generating Excel...', 'success');
     try {
       const result = await buildShareFile(data);
 
-      // 1. Try sharing ONLY the file (Highest compatibility for Gmail/Outlook)
-      // Most email apps will correctly attach the file and let user fill text later
-      const fileOnlyData = { files: [result.file] };
-      if (navigator.canShare && navigator.canShare(fileOnlyData)) {
-        try {
-          await navigator.share(fileOnlyData);
-          showToast('File shared!', 'success');
-          return;
-        } catch (err) {
-          if (err.name === 'AbortError') return;
-          console.error('File-only share failed:', err);
+      // 1. Trigger Automatic Download
+      const blob = new Blob([result.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = result.fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      // 2. Show Persistent Bottom Popup
+      const overlay = $('#sharePopupOverlay');
+      const filenameEl = $('#sharePopupFilename');
+      if (overlay && filenameEl) {
+        filenameEl.textContent = result.fileName;
+        overlay.classList.add('active');
+
+        // 3. Setup Intent Buttons
+        const subject = encodeURIComponent('DSR Report - ' + data.employeeName + ' - ' + data.monthName);
+        const body = encodeURIComponent('Please find attached DSR Report for ' + data.monthName + '.');
+
+        // Android Intents
+        const gmailBtn = $('#openGmailBtn');
+        const outlookBtn = $('#openOutlookBtn');
+
+        if (gmailBtn) {
+          gmailBtn.onclick = () => {
+            window.location.href = 'intent://compose?subject=' + subject + '&body=' + body + '#Intent;scheme=googlegmail;package=com.google.android.gm;end';
+          };
+        }
+
+        if (outlookBtn) {
+          outlookBtn.onclick = () => {
+            window.location.href = 'intent://compose?subject=' + subject + '&body=' + body + '#Intent;scheme=ms-outlook;package=com.microsoft.office.outlook;end';
+          };
+        }
+
+        // Close logic
+        const closeBtn = $('#closeSharePopup');
+        if (closeBtn) {
+          closeBtn.onclick = () => overlay.classList.remove('active');
         }
       }
 
-      // 2. Try sharing file + text (Fallback)
-      const shareData = {
-        files: [result.file],
-        title: 'Daily Status Report',
-        text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')'
-      };
-      if (navigator.canShare && navigator.canShare(shareData)) {
-        try {
-          await navigator.share(shareData);
-          showToast('Shared successfully!', 'success');
-          return;
-        } catch (err) {
-          if (err.name === 'AbortError') return;
-          console.error('Combined share failed:', err);
-        }
-      }
-
-      // 3. Global fallback to email (mailto)
-      shareViaEmail(data, result.buffer, result.fileName);
+      showToast('Excel Downloaded! Details in popup.', 'success');
     } catch (err) {
       console.error('General share error:', err);
       showToast('Failed to prepare Excel.', 'error');
