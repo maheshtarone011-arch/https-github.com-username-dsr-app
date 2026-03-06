@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Color Cloud Healthcare - Daily Status Report (DSR) Entry App">
+  <title>DSR - Color Cloud Healthcare</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <!-- ExcelJS for Excel export with image support -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  
+  <style>
+    /* Premium Authentication UI */
+    .auth-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(10, 10, 15, 0.95);
+      backdrop-filter: blur(10px);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    .auth-overlay.active { opacity: 1; pointer-events: all; }
+    .auth-card {
+      background: var(--card-bg, #1a1a24);
+      padding: 40px;
+      border-radius: 24px;
+      width: 90%;
+      max-width: 400px;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.05);
+      text-align: center;
+    }
+    .auth-logo { width: 80px; margin-bottom: 20px; }
+    .auth-title { font-size: 1.5rem; font-weight: 700; margin-bottom: 8px; color: #fff; }
+    .auth-subtitle { color: var(--text-muted, #a0a0b0); margin-bottom: 30px; font-size: 0.9rem; }
+    .auth-group { text-align: left; margin-bottom: 20px; }
+    .auth-group label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: #a0a0b0; }
+    .auth-input {
+      width: 100%; padding: 12px 16px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 12px;
+      color: #fff; font-size: 1rem;
+      transition: all 0.3s ease;
+    }
+    .auth-input:focus { border-color: var(--primary, #4776e6); outline: none; background: rgba(255,255,255,0.08); }
+    .pin-display {
+      display: flex; justify-content: center; gap: 15px; margin: 30px 0;
+    }
+    .pin-dot {
+      width: 15px; height: 15px; border-radius: 50%;
+      border: 2px solid var(--primary, #4776e6);
+      transition: all 0.2s ease;
+    }
+    .pin-dot.filled { background: var(--primary, #4776e6); transform: scale(1.2); }
+    .num-pad {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;
+      max-width: 250px; margin: 0 auto;
+    }
+    .num-btn {
+      aspect-ratio: 1; border-radius: 50%;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #fff; font-size: 1.25rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s ease;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .num-btn:active { transform: scale(0.9); background: var(--primary, #4776e6); border-color: var(--primary); }
+    .auth-toggle { margin-top: 20px; font-size: 0.85rem; color: var(--text-muted, #a0a0b0); }
+    .auth-toggle span { color: var(--primary, #4776e6); cursor: pointer; font-weight: 600; }
+  </style>
+</head>
+
+<body>
+
+  <!-- Login/Signup Overlay -->
+  <div id="loginOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <img src="logo.png" alt="Logo" class="auth-logo">
+      <div id="authTitle" class="auth-title">DSR Login</div>
+      <div id="authSubtitle" class="auth-subtitle">Welcome back! Please sign in.</div>
+      <form id="authForm">
+        <div class="auth-group">
+          <label for="authEmail">Email Address</label>
+          <input type="email" id="authEmail" class="auth-input" placeholder="name@example.com" required>
+        </div>
+        <div class="auth-group">
+          <label for="authPassword">Password</label>
+          <input type="password" id="authPassword" class="auth-input" placeholder="••••••••" required>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; padding:14px; font-size:1rem;">Continue</button>
+      </form>
+      <div class="auth-toggle" id="authToggleText">Don't have an account? <span id="toggleAuthBtn">Sign Up</span></div>
+    </div>
+  </div>
+
+  <!-- PIN Lock Overlay -->
+  <div id="pinOverlay" class="auth-overlay">
+    <div class="auth-card">
+      <div id="pinTitle" class="auth-title">Enter PIN</div>
+      <div id="pinSubtitle" class="auth-subtitle">Verify your identity to proceed</div>
+      <div class="pin-display" id="pinDisplay">
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+        <div class="pin-dot"></div>
+      </div>
+      <div class="num-pad" id="numPad">
+        <button class="num-btn" data-val="1">1</button>
+        <button class="num-btn" data-val="2">2</button>
+        <button class="num-btn" data-val="3">3</button>
+        <button class="num-btn" data-val="4">4</button>
+        <button class="num-btn" data-val="5">5</button>
+        <button class="num-btn" data-val="6">6</button>
+        <button class="num-btn" data-val="7">7</button>
+        <button class="num-btn" data-val="8">8</button>
+        <button class="num-btn" data-val="9">9</button>
+        <button class="num-btn" data-val="clear" style="font-size:0.9rem;">CLR</button>
+        <button class="num-btn" data-val="0">0</button>
+        <button class="num-btn" data-val="delete">⌫</button>
+      </div>
+      <button id="logoutBtn" class="btn btn-danger-outline btn-sm" style="margin-top:30px; opacity:0.6;">Switch Account</button>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <header class="app-header">
+      <button class="theme-toggle" id="themeToggle" title="Toggle Theme">🌙</button>
+      <h1><img src="logo.png" alt="Logo" class="header-logo"> Color Cloud Healthcare</h1>
+      <p>Daily Status Report (DSR)</p>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="entry" id="tab-entry">
+        <span class="icon">✏️</span> New Entry
+      </button>
+      <button class="tab-btn" data-tab="history" id="tab-history">
+        <span class="icon">📂</span> History
+      </button>
+    </nav>
+
+    <!-- ====== TAB: New Entry ====== -->
+    <div class="tab-content active" id="content-entry">
+      <form id="dsr-form" class="card">
+
+        <!-- PROFILE LOCKED VIEW -->
+        <div id="profileLockedBar" class="profile-locked-bar" style="display:none;">
+          <div class="profile-locked-info">
+            <span class="profile-avatar">👤</span>
+            <div class="profile-locked-text">
+              <span id="profileNameDisplay" class="profile-name"></span>
+              <span id="profileSubDisplay" class="profile-sub"></span>
+            </div>
+          </div>
+          <button type="button" id="editProfileBtn" class="btn-edit-profile">✏️ Edit</button>
+        </div>
+
+        <!-- PROFILE FORM (shown only when editing) -->
+        <div id="profileFormSection">
+          <div class="card-title" style="font-size:1.15rem; font-weight:700;"><span class="icon">👤</span> <b>Employee Details</b></div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="employeeName">Name</label>
+              <input type="text" id="employeeName" placeholder="e.g. Mahesh Tarone" required>
+            </div>
+            <div class="form-group">
+              <label for="designation">Designation</label>
+              <input type="text" id="designation" placeholder="e.g. Sr. Service Engineer">
+            </div>
+            <div class="form-group">
+              <label for="zone">Zone</label>
+              <input type="text" id="zone" placeholder="e.g. East">
+            </div>
+            <div class="form-group">
+              <label for="location">Location</label>
+              <input type="text" id="location" placeholder="e.g. Bhopal">
+            </div>
+            <div class="form-group">
+              <label for="reportingManager">Reporting Manager</label>
+              <input type="text" id="reportingManager" placeholder="e.g. Pramod Sir">
+            </div>
+          </div>
+          <div style="margin-top:10px; text-align:right;">
+            <button type="button" id="saveProfileBtn" class="btn btn-primary" style="padding:9px 28px; font-size:0.95rem;">💾 Save Profile</button>
+          </div>
+        </div>
+
+        <!-- Month selector always visible -->
+        <div class="form-group" style="margin-top:10px; max-width:220px;">
+          <label for="reportMonth">📅 Month</label>
+          <input type="month" id="reportMonth" required>
+        </div>
+
+        <!-- Daily Entries -->
+        <div class="entries-section">
+          <div class="section-header">
+            <h3>📌 Daily Entries</h3>
+            <button type="button" class="btn btn-success-outline btn-sm" id="addEntryBtn">+ Add Entry</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="entry-table" id="entryTable">
+              <thead>
+                <tr>
+                  <th style="width:50px;">Date</th>
+                  <th style="width:36px;">SN</th>
+                  <th>Form</th>
+                  <th>Location</th>
+                  <th>TO</th>
+                  <th>Location</th>
+                  <th style="width:50px;">KM</th>
+                  <th>Purpose</th>
+                  <th style="width:40px;"></th>
+                </tr>
+              </thead>
+              <tbody id="entryBody">
+                <tr>
+                  <td><input type="date" class="entry-date"></td>
+                  <td class="sno">1</td>
+                  <td><input type="text" placeholder="From place" class="entry-from"></td>
+                  <td><input type="text" placeholder="Location" class="entry-from-loc"></td>
+                  <td><input type="text" placeholder="To place" class="entry-to"></td>
+                  <td><input type="text" placeholder="Location" class="entry-to-loc"></td>
+                  <td><input type="text" placeholder="KM" class="entry-km"></td>
+                  <td><input type="text" placeholder="Purpose of visit" class="entry-purpose"></td>
+                  <td style="text-align:center;">
+                    <button type="button" class="btn btn-danger btn-sm remove-entry-btn" title="Remove">✕</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </form>
+
+      <!-- Report Saved Message -->
+      <div class="report-section" id="reportSection">
+        <div class="card" style="padding:20px; text-align:center;">
+          <div style="font-size:2rem; margin-bottom:8px;">✅</div>
+          <div style="font-size:1rem; font-weight:600; margin-bottom:4px;">Report Generated & Saved!</div>
+          <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">Your report has been saved. View it
+            in History.</p>
+          <button class="btn btn-primary" id="showInHistoryBtn">📂 Show in History</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ====== TAB: History ====== -->
+    <div class="tab-content" id="content-history">
+      <div class="card">
+        <div class="card-title"><span class="icon">📂</span> Report History</div>
+        <div class="history-filters">
+          <select id="filterMonth">
+            <option value="">All Months</option>
+          </select>
+          <input type="date" id="filterDate" placeholder="Filter by date">
+          <button class="btn btn-danger btn-sm" id="clearFilters" style="flex:0;">Clear</button>
+        </div>
+        <div class="history-list" id="historyList">
+          <div class="empty-state">
+            <span class="icon">📭</span>
+            <p>No reports yet. Create your first report!</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="reportModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="modalTitle">Report Details</h3>
+        <button class="btn btn-icon btn-sm" id="closeModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="report-preview" id="modalReportPreview"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-pdf btn-sm" id="modalDownloadPdf">📥 PDF</button>
+        <button class="btn btn-excel btn-sm" id="modalDownloadExcel">📊 Excel</button>
+        <button class="btn btn-whatsapp btn-sm" id="modalShareWhatsapp">💬 WhatsApp</button>
+        <button class="btn btn-primary btn-sm" id="modalShare">🔗 Share</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sticky Bottom Generate Bar -->
+  <div class="sticky-bottom-bar" id="stickyBar">
+    <div class="km-total-badge">
+      <span class="km-label">Total KM</span>
+      <span class="km-value" id="kmTotalDisplay">0</span>
+    </div>
+    <button type="button" class="btn btn-primary btn-generate" id="submitBtn">
+      🚀 Generate Report
+    </button>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>
