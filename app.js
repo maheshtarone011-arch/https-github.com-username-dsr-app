@@ -602,10 +602,11 @@ import {
   async function buildShareFile(data) {
     const wb = await buildExcelWorkbook(data);
     const buffer = await wb.xlsx.writeBuffer();
-    const fileName = 'DSR_' + data.monthName + '_' + data.month.split('-')[0] + '.xlsx';
+    const rawFileName = 'DSR_' + data.monthName + '_' + data.month.split('-')[0] + '.xlsx';
+    const fileName = rawFileName.replace(/\s+/g, '_'); // Robust naming
     const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     const blob = new Blob([buffer], { type: mimeType });
-    const file = new File([blob], fileName, { type: mimeType });
+    const file = new File([blob], fileName, { type: mimeType, lastModified: Date.now() });
     return { buffer, file, fileName };
   }
 
@@ -615,18 +616,42 @@ import {
     try {
       const result = await buildShareFile(data);
       const shareData = {
+        files: [result.file],
         title: 'Daily Status Report',
-        text: 'DSR ' + data.employeeName + ' - ' + data.monthName,
-        files: [result.file]
+        text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')'
       };
+
+      // Try sharing both file and text
       if (navigator.canShare && navigator.canShare(shareData)) {
-        navigator.share(shareData)
-          .then(() => showToast('Shared successfully!', 'success'))
-          .catch((err) => { if (err.name !== 'AbortError') fallbackDownloadAndWhatsApp(data, result.buffer, result.fileName); });
-      } else {
-        fallbackDownloadAndWhatsApp(data, result.buffer, result.fileName);
+        try {
+          await navigator.share(shareData);
+          showToast('Shared successfully!', 'success');
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.error('Combined share failed:', err);
+        }
       }
-    } catch (err) { showToast('Failed to prepare Excel.', 'error'); }
+
+      // Fallback: Try sharing ONLY the file (more compatible)
+      const fileOnlyData = { files: [result.file] };
+      if (navigator.canShare && navigator.canShare(fileOnlyData)) {
+        try {
+          await navigator.share(fileOnlyData);
+          showToast('File shared!', 'success');
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.error('File-only share failed:', err);
+        }
+      }
+
+      // Global fallback
+      fallbackDownloadAndWhatsApp(data, result.buffer, result.fileName);
+    } catch (err) {
+      console.error('Share process error:', err);
+      showToast('Failed to prepare Excel.', 'error');
+    }
   }
 
   function fallbackDownloadAndWhatsApp(data, buffer, fileName) {
