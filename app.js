@@ -603,8 +603,9 @@ import {
     const wb = await buildExcelWorkbook(data);
     const buffer = await wb.xlsx.writeBuffer();
     const fileName = 'DSR_' + data.monthName + '_' + data.month.split('-')[0] + '.xlsx';
-    const blob = new Blob([buffer], { type: 'application/octet-stream' });
-    const file = new File([blob], fileName, { type: 'application/octet-stream' });
+    const mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const blob = new Blob([buffer], { type: mimeType });
+    const file = new File([blob], fileName, { type: mimeType });
     return { buffer, file, fileName };
   }
 
@@ -613,8 +614,13 @@ import {
     showToast('Preparing Excel...', 'success');
     try {
       const result = await buildShareFile(data);
-      if (navigator.canShare && navigator.canShare({ files: [result.file] })) {
-        navigator.share({ files: [result.file] })
+      const shareData = {
+        title: 'Daily Status Report',
+        text: 'DSR ' + data.employeeName + ' - ' + data.monthName,
+        files: [result.file]
+      };
+      if (navigator.canShare && navigator.canShare(shareData)) {
+        navigator.share(shareData)
           .then(() => showToast('Shared successfully!', 'success'))
           .catch((err) => { if (err.name !== 'AbortError') fallbackDownloadAndWhatsApp(data, result.buffer, result.fileName); });
       } else {
@@ -638,18 +644,8 @@ import {
 
   const modalShareBtn = $('#modalShare');
   if (modalShareBtn) {
-    modalShareBtn.addEventListener('click', async () => {
-      if (!currentModalData) return;
-      try {
-        const result = await buildShareFile(currentModalData);
-        if (navigator.canShare && navigator.canShare({ files: [result.file] })) {
-          navigator.share({ files: [result.file] })
-            .then(() => showToast('Shared successfully!', 'success'))
-            .catch((err) => { if (err.name !== 'AbortError') shareViaEmail(currentModalData, result.buffer, result.fileName); });
-        } else {
-          shareViaEmail(currentModalData, result.buffer, result.fileName);
-        }
-      } catch (err) { showToast('Failed to share.', 'error'); }
+    modalShareBtn.addEventListener('click', () => {
+      if (currentModalData) shareWhatsAppExcel(currentModalData);
     });
   }
 
