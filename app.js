@@ -726,35 +726,52 @@ import {
   // AUTHENTICATION & PIN
   // ==========================
   onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      currentUser = user;
-      await checkAndShowPin();
-    } else {
-      currentUser = null;
-      els.loginOverlay.classList.add('active');
-      els.pinOverlay.classList.remove('active');
+    try {
+      if (user) {
+        console.log('User logged in:', user.uid);
+        currentUser = user;
+        await checkAndShowPin();
+      } else {
+        console.log('No user logged in');
+        currentUser = null;
+        els.loginOverlay.classList.add('active');
+        els.pinOverlay.classList.remove('active');
+      }
+    } catch (error) {
+      console.error('Critical Auth State Change Error:', error);
+      showToast('Authentication error. Please refresh.', 'error');
     }
   });
 
   async function checkAndShowPin() {
-    const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-    const userData = userDoc.data();
+    try {
+      console.log('Checking PIN for user:', currentUser.uid);
+      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      const userData = userDoc.data();
 
-    if (userData && userData.pin) {
-      userPin = userData.pin;
-      els.loginOverlay.classList.remove('active');
-      els.pinOverlay.classList.add('active');
-      $('#pinTitle').textContent = 'Enter PIN';
-      $('#pinSubtitle').textContent = 'Verify your identity';
-    } else {
-      // Setup PIN
-      userPin = null;
-      els.loginOverlay.classList.remove('active');
-      els.pinOverlay.classList.add('active');
-      $('#pinTitle').textContent = 'Setup PIN';
-      $('#pinSubtitle').textContent = 'Create a 4-digit PIN for security';
+      if (userData && userData.pin) {
+        console.log('Existing PIN found');
+        userPin = userData.pin;
+        els.loginOverlay.classList.remove('active');
+        els.pinOverlay.classList.add('active');
+        $('#pinTitle').textContent = 'Enter PIN';
+        $('#pinSubtitle').textContent = 'Verify your identity';
+      } else {
+        console.log('No PIN found, showing setup');
+        userPin = null;
+        els.loginOverlay.classList.remove('active');
+        els.pinOverlay.classList.add('active');
+        $('#pinTitle').textContent = 'Setup PIN';
+        $('#pinSubtitle').textContent = 'Create a 4-digit PIN for security';
+      }
+      resetPin();
+    } catch (error) {
+      console.error('Error in checkAndShowPin:', error);
+      showToast('Error loading user data. Check permissions.', 'error');
+      // Force hide login overlay even on error so user isn't stuck if we want to bypass,
+      // but better to keep them there if it's a critical error.
+      // For now, let's keep it stuck so we can see the error.
     }
-    resetPin();
   }
 
   function toggleAuthMode() {
