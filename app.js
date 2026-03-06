@@ -612,7 +612,7 @@ import {
 
   async function shareWhatsAppExcel(data) {
     if (!data) { showToast('No report data.', 'error'); return; }
-    showToast('Preparing Excel...', 'success');
+    showToast('Preparing Excel for WhatsApp...', 'success');
     try {
       const result = await buildShareFile(data);
       const shareData = {
@@ -621,7 +621,7 @@ import {
         text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')'
       };
 
-      // Try sharing both file and text
+      // WhatsApp handles combined share well usually
       if (navigator.canShare && navigator.canShare(shareData)) {
         try {
           await navigator.share(shareData);
@@ -633,7 +633,7 @@ import {
         }
       }
 
-      // Fallback: Try sharing ONLY the file (more compatible)
+      // Fallback: Try sharing ONLY the file
       const fileOnlyData = { files: [result.file] };
       if (navigator.canShare && navigator.canShare(fileOnlyData)) {
         try {
@@ -646,10 +646,55 @@ import {
         }
       }
 
-      // Global fallback
+      // Global fallback to download + link
       fallbackDownloadAndWhatsApp(data, result.buffer, result.fileName);
     } catch (err) {
-      console.error('Share process error:', err);
+      console.error('WhatsApp share process error:', err);
+      showToast('Failed to prepare Excel.', 'error');
+    }
+  }
+
+  async function shareGeneralExcel(data) {
+    if (!data) { showToast('No report data.', 'error'); return; }
+    showToast('Preparing Excel for Sharing...', 'success');
+    try {
+      const result = await buildShareFile(data);
+
+      // 1. Try sharing ONLY the file (Highest compatibility for Gmail/Outlook)
+      // Most email apps will correctly attach the file and let user fill text later
+      const fileOnlyData = { files: [result.file] };
+      if (navigator.canShare && navigator.canShare(fileOnlyData)) {
+        try {
+          await navigator.share(fileOnlyData);
+          showToast('File shared!', 'success');
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.error('File-only share failed:', err);
+        }
+      }
+
+      // 2. Try sharing file + text (Fallback)
+      const shareData = {
+        files: [result.file],
+        title: 'Daily Status Report',
+        text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')'
+      };
+      if (navigator.canShare && navigator.canShare(shareData)) {
+        try {
+          await navigator.share(shareData);
+          showToast('Shared successfully!', 'success');
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+          console.error('Combined share failed:', err);
+        }
+      }
+
+      // 3. Global fallback to email (mailto)
+      shareViaEmail(data, result.buffer, result.fileName);
+    } catch (err) {
+      console.error('General share error:', err);
       showToast('Failed to prepare Excel.', 'error');
     }
   }
@@ -670,7 +715,7 @@ import {
   const modalShareBtn = $('#modalShare');
   if (modalShareBtn) {
     modalShareBtn.addEventListener('click', () => {
-      if (currentModalData) shareWhatsAppExcel(currentModalData);
+      if (currentModalData) shareGeneralExcel(currentModalData);
     });
   }
 
