@@ -49,7 +49,14 @@ import {
     authToggleText: $('#authToggleText'),
     pinDisplay: $('#pinDisplay'),
     numPad: $('#numPad'),
-    logoutBtn: $('#logoutBtn')
+    logoutBtn: $('#logoutBtn'),
+    // Profile elements
+    saveProfileBtn: $('#saveProfileBtn'),
+    editProfileBtn: $('#editProfileBtn'),
+    profileLockedBar: $('#profileLockedBar'),
+    profileFormSection: $('#profileFormSection'),
+    profileNameDisplay: $('#profileNameDisplay'),
+    profileSubDisplay: $('#profileSubDisplay')
   };
 
   let _lastGeneratedData = null;
@@ -857,6 +864,55 @@ import {
     signOut(auth);
   });
 
+  // ==========================
+  // PROFILE MANAGEMENT
+  // ==========================
+  function loadProfile() {
+    try {
+      const raw = localStorage.getItem(PROFILE_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function saveProfile() {
+    const profile = {
+      name: $('#employeeName').value.trim(),
+      designation: $('#designation').value.trim(),
+      zone: $('#zone').value.trim(),
+      location: $('#location').value.trim(),
+      reportingManager: $('#reportingManager').value.trim()
+    };
+
+    if (!profile.name) {
+      showToast('Name is required.', 'error');
+      return;
+    }
+
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    showProfileLocked(profile);
+    showToast('Profile saved!', 'success');
+    saveDraft(); // also save draft to keep sync
+  }
+
+  function showProfileForm() {
+    els.profileFormSection.style.display = 'block';
+    els.profileLockedBar.style.display = 'none';
+  }
+
+  function showProfileLocked(profile) {
+    els.profileFormSection.style.display = 'none';
+    els.profileLockedBar.style.display = 'flex';
+    els.profileNameDisplay.textContent = profile.name;
+    els.profileSubDisplay.textContent = (profile.designation || '') + (profile.location ? ' • ' + profile.location : '');
+
+    // Fill form fields too
+    $('#employeeName').value = profile.name || '';
+    $('#designation').value = profile.designation || '';
+    $('#zone').value = profile.zone || '';
+    $('#location').value = profile.location || '';
+    $('#reportingManager').value = profile.reportingManager || '';
+  }
+
   async function initApp() {
     // 1. Core Profile/Logo Initialization
     await loadLogoBase64();
@@ -907,8 +963,8 @@ import {
 
     // 4. Wire Global Events (only once)
     if (!window._initDone) {
-      $('#saveProfileBtn').addEventListener('click', saveProfile);
-      $('#editProfileBtn').addEventListener('click', showProfileForm);
+      els.saveProfileBtn.addEventListener('click', saveProfile);
+      els.editProfileBtn.addEventListener('click', showProfileForm);
 
       $('#reportMonth').addEventListener('change', function () {
         const m = this.value;
