@@ -14,6 +14,9 @@ import {
   let userPin = null;
   let pinInput = '';
 
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => document.querySelectorAll(sel);
+
   const els = {
     form: $('#dsr-form'),
     entryBody: $('#entryBody'),
@@ -838,256 +841,244 @@ import {
   });
 
   async function initApp() {
-    await migrateLocalStorageToFirestore();
-    initProfile();
-    // Default to current month if not set
-    if (!$('#reportMonth').value) {
-      const now = new Date();
-      $('#reportMonth').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    // 1. Core Profile/Logo Initialization
+    await loadLogoBase64();
+    const profile = loadProfile();
+    if (profile) {
+      showProfileLocked(profile);
+    } else {
+      showProfileForm();
     }
+
+    // 2. Data Migration & Monthly Setup
+    await migrateLocalStorageToFirestore();
+    calculateKmTotal();
+
+    const today = getTodayStr();
+    const now = new Date();
+    const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    if (!$('#reportMonth').value) {
+      $('#reportMonth').value = currentMonth;
+    }
+
+    // 3. Draft Restoration
     const month = $('#reportMonth').value;
     const draft = loadDraft(month);
     if (draft) {
-      restoreDraftRows(draft.rows);
+      $('#employeeName').value = draft.employeeName || '';
+      $('#designation').value = draft.designation || '';
+      $('#zone').value = draft.zone || '';
+      $('#location').value = draft.location || '';
+      $('#reportingManager').value = draft.reportingManager || '';
+      if (draft.rows && draft.rows.length > 0) {
+        restoreDraftRows(draft.rows);
+      } else {
+        addEntryRow();
+      }
     } else {
+      // No draft: prefill from last saved report (employee info only)
+      const lastReport = getLastGeneratedData();
+      if (lastReport) {
+        $('#employeeName').value = lastReport.employeeName || '';
+        $('#designation').value = lastReport.designation || '';
+        $('#zone').value = lastReport.zone || '';
+        $('#location').value = lastReport.location || '';
+        $('#reportingManager').value = lastReport.reportingManager || '';
+      }
       addEntryRow();
     }
+
+    // 4. Wire Global Events (only once)
+    if (!window._initDone) {
+      $('#saveProfileBtn').addEventListener('click', saveProfile);
+      $('#editProfileBtn').addEventListener('click', showProfileForm);
+
+      $('#reportMonth').addEventListener('change', function () {
+        const m = this.value;
+        const d = loadDraft(m);
+        if (d && d.rows && d.rows.length > 0) {
+          restoreDraftRows(d.rows);
+        } else {
+          els.entryBody.innerHTML = '';
+          addEntryRow();
+        }
+      });
+      window._initDone = true;
+    }
+
+    calculateKmTotal();
   }
 
   // ==========================
   // STORAGE (Firestore)
   // ==========================
-  return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-}
+  async function getAllReports() {
+    if (!currentUser) return [];
+    const q = query(collection(db, 'reports'), where('uid', '==', currentUser.uid));
+    const querySnapshot = await getDocs(q);
+    const reports = [];
+    querySnapshot.forEach((doc) => {
+      reports.push({ id: doc.id, ...doc.data() });
+    });
+    return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
 
   async function migrateLocalStorageToFirestore() {
-  if (!currentUser) return;
-  try {
-    const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (localData && Array.isArray(localData) && localData.length > 0) {
-      showToast('Syncing old reports to cloud...', 'success');
-      for (const report of localData) {
-        // Add uid to local report
-        report.uid = currentUser.uid;
-        // Use basic save logic (ignore duplicates by relying on saveReport check if we wanted, 
-        // but here we just upload them all as new if they aren't there)
-        await saveReport(report);
-      }
-      // Clear local storage after successful migration to avoid re-syncing
-      localStorage.removeItem(STORAGE_KEY);
-      showToast('Old reports synced! ✅', 'success');
-    }
-  } catch (e) {
-    console.error('Migration failed', e);
-  }
-}
-
-async function deleteReport(id) {
-  if (!currentUser) return;
-  await deleteDoc(doc(db, 'reports', id));
-}
-
-async function saveReport(data) {
-  if (!currentUser) return;
-  data.uid = currentUser.uid;
-  // Check if report for this month exists
-  const q = query(collection(db, 'reports'),
-    where('uid', '==', currentUser.uid),
-    where('month', '==', data.month));
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
-    // Overwrite existing
-    const existingId = querySnapshot.docs[0].id;
-    await setDoc(doc(db, 'reports', existingId), data);
-  } else {
-    // Create new
-    await setDoc(doc(collection(db, 'reports')), data);
-  }
-  // Track last generated month locally
-  try { localStorage.setItem('ccg_last_month', data.month); } catch (e) { }
-}
-
-// Override renderHistory to use async fetching
-async function renderHistory() {
-  const reports = await getAllReports();
-  const monthFilter = els.filterMonth.value;
-  const dateFilter = els.filterDate.value;
-  populateMonthFilter(reports);
-  let filtered = reports;
-  if (monthFilter) filtered = filtered.filter(r => r.month === monthFilter);
-  if (dateFilter) filtered = filtered.filter(r => r.entries.some(e => e.date === dateFilter));
-  if (filtered.length === 0) {
-    els.historyList.innerHTML = '<div class="empty-state"><span class="icon">&#x1F4ED;</span><p>' +
-      (reports.length === 0 ? 'No reports yet. Create your first report!' : 'No reports match your filters.') + '</p></div>';
-    return;
-  }
-  els.historyList.innerHTML = filtered.map(r =>
-    '<div class="history-item" data-id="' + r.id + '">' +
-    '<div class="history-item-info"><h4>' + esc(r.employeeName) + '</h4>' +
-    '<p>' + esc(r.designation) + ' &middot; ' + r.entries.length + ' entr' + (r.entries.length > 1 ? 'ies' : 'y') + '</p></div>' +
-    '<div style="display:flex;align-items:center;gap:8px;">' +
-    '<span class="history-item-date">' + esc(r.monthName) + ' ' + r.month.split('-')[0] + '</span>' +
-    '<button class="btn-delete-report" data-id="' + r.id + '" title="Delete">🗑️</button>' +
-    '</div></div>'
-  ).join('');
-  els.historyList.querySelectorAll('.history-item').forEach(item => {
-    item.addEventListener('click', async (e) => {
-      if (e.target.classList.contains('btn-delete-report')) {
-        const id = e.target.dataset.id;
-        if (confirm('Ye report delete karna chahte ho?')) {
-          await deleteReport(id);
-          renderHistory();
-          showToast('Report delete ho gayi!', 'success');
+    if (!currentUser) return;
+    try {
+      const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
+      if (localData && Array.isArray(localData) && localData.length > 0) {
+        showToast('Syncing old reports to cloud...', 'success');
+        for (const report of localData) {
+          // Add uid to local report
+          report.uid = currentUser.uid;
+          await saveReport(report);
         }
-        return;
+        // Clear local storage after successful migration to avoid re-syncing
+        localStorage.removeItem(STORAGE_KEY);
+        showToast('Old reports synced! ✅', 'success');
       }
-      const report = reports.find(r => r.id === item.dataset.id);
-      if (report) openModal(report);
-    });
-  });
-}
-
-// Rename init to initProfile and adjust it
-function initProfile() {
-  loadLogoBase64();
-  const profile = loadProfile();
-  if (profile) {
-    showProfileLocked(profile);
-  } else {
-    showProfileForm();
-  }
-  calculateKmTotal();
-}
-
-// ==========================
-// DRAFT AUTO-SAVE (per month)
-// ==========================
-function saveDraft() {
-  const month = $('#reportMonth').value;
-  if (!month) return;
-  const rows = [];
-  els.entryBody.querySelectorAll('tr').forEach(function (tr) {
-    rows.push({
-      date: tr.querySelector('.entry-date').value,
-      from: tr.querySelector('.entry-from').value,
-      fromLoc: tr.querySelector('.entry-from-loc').value,
-      to: tr.querySelector('.entry-to').value,
-      toLoc: tr.querySelector('.entry-to-loc').value,
-      km: tr.querySelector('.entry-km').value,
-      purpose: tr.querySelector('.entry-purpose').value,
-    });
-  });
-  const draft = {
-    month: month,
-    employeeName: $('#employeeName').value,
-    designation: $('#designation').value,
-    zone: $('#zone').value,
-    location: $('#location').value,
-    reportingManager: $('#reportingManager').value,
-    rows: rows,
-  };
-  try { localStorage.setItem(DRAFT_KEY + '_' + month, JSON.stringify(draft)); } catch (e) { }
-}
-
-function loadDraft(month) {
-  try {
-    const raw = localStorage.getItem(DRAFT_KEY + '_' + month);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) { return null; }
-}
-
-function restoreDraftRows(rows) {
-  // Clear existing rows
-  els.entryBody.innerHTML = '';
-  rows.forEach(function (r, i) {
-    const tr = document.createElement('tr');
-    tr.innerHTML =
-      '<td><input type="date" class="entry-date" value="' + (r.date || '') + '"></td>' +
-      '<td class="sno">' + (i + 1) + '</td>' +
-      '<td><input type="text" placeholder="From place" class="entry-from" value="' + (r.from || '') + '"></td>' +
-      '<td><input type="text" placeholder="Location" class="entry-from-loc" value="' + (r.fromLoc || '') + '"></td>' +
-      '<td><input type="text" placeholder="To place" class="entry-to" value="' + (r.to || '') + '"></td>' +
-      '<td><input type="text" placeholder="Location" class="entry-to-loc" value="' + (r.toLoc || '') + '"></td>' +
-      '<td><input type="text" placeholder="KM" class="entry-km" inputmode="decimal" pattern="[0-9.]*" value="' + (r.km || '') + '"></td>' +
-      '<td><input type="text" placeholder="Purpose" class="entry-purpose" value="' + (r.purpose || '') + '"></td>' +
-      '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm remove-entry-btn" title="Remove">&#x2715;</button></td>';
-    els.entryBody.appendChild(tr);
-  });
-  calculateKmTotal();
-}
-
-async function init() {
-  const today = getTodayStr();
-  const now = new Date();
-  const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-  $('#reportMonth').value = currentMonth;
-
-  // Load saved profile
-  const profile = loadProfile();
-  if (profile) {
-    showProfileLocked(profile);
-  }
-
-  // Wire profile buttons
-  $('#saveProfileBtn').addEventListener('click', saveProfile);
-  $('#editProfileBtn').addEventListener('click', showProfileForm);
-
-  // Try to restore draft for current month
-  const draft = loadDraft(currentMonth);
-  if (draft) {
-    $('#employeeName').value = draft.employeeName || '';
-    $('#designation').value = draft.designation || '';
-    $('#zone').value = draft.zone || '';
-    $('#location').value = draft.location || '';
-    $('#reportingManager').value = draft.reportingManager || '';
-    if (draft.rows && draft.rows.length > 0) {
-      restoreDraftRows(draft.rows);
-    } else {
-      const firstDate = els.entryBody.querySelector('.entry-date');
-      if (firstDate) firstDate.value = today;
+    } catch (e) {
+      console.error('Migration failed', e);
     }
-  } else {
-    // No draft: prefill from last saved report (employee info only)
-    const lastReport = getLastGeneratedData();
-    if (lastReport) {
-      $('#employeeName').value = lastReport.employeeName || '';
-      $('#designation').value = lastReport.designation || '';
-      $('#zone').value = lastReport.zone || '';
-      $('#location').value = lastReport.location || '';
-      $('#reportingManager').value = lastReport.reportingManager || '';
-    }
-    const firstDate = els.entryBody.querySelector('.entry-date');
-    if (firstDate) firstDate.value = today;
   }
 
-  // When month changes, load that month's draft
-  $('#reportMonth').addEventListener('change', function () {
-    const m = this.value;
-    const d = loadDraft(m);
-    if (d && d.rows && d.rows.length > 0) {
-      restoreDraftRows(d.rows);
+  async function deleteReport(id) {
+    if (!currentUser) return;
+    await deleteDoc(doc(db, 'reports', id));
+  }
+
+  async function saveReport(data) {
+    if (!currentUser) return;
+    data.uid = currentUser.uid;
+    // Check if report for this month exists
+    const q = query(collection(db, 'reports'),
+      where('uid', '==', currentUser.uid),
+      where('month', '==', data.month));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      // Overwrite existing
+      const existingId = querySnapshot.docs[0].id;
+      await setDoc(doc(db, 'reports', existingId), data);
     } else {
-      els.entryBody.innerHTML = '';
+      // Create new
+      await setDoc(doc(collection(db, 'reports')), data);
+    }
+    // Track last generated month locally
+    try { localStorage.setItem('ccg_last_month', data.month); } catch (e) { }
+  }
+
+  // Override renderHistory to use async fetching
+  async function renderHistory() {
+    const reports = await getAllReports();
+    const monthFilter = els.filterMonth.value;
+    const dateFilter = els.filterDate.value;
+    populateMonthFilter(reports);
+    let filtered = reports;
+    if (monthFilter) filtered = filtered.filter(r => r.month === monthFilter);
+    if (dateFilter) filtered = filtered.filter(r => r.entries.some(e => e.date === dateFilter));
+    if (filtered.length === 0) {
+      els.historyList.innerHTML = '<div class="empty-state"><span class="icon">&#x1F4ED;</span><p>' +
+        (reports.length === 0 ? 'No reports yet. Create your first report!' : 'No reports match your filters.') + '</p></div>';
+      return;
+    }
+    els.historyList.innerHTML = filtered.map(r =>
+      '<div class="history-item" data-id="' + r.id + '">' +
+      '<div class="history-item-info"><h4>' + esc(r.employeeName) + '</h4>' +
+      '<p>' + esc(r.designation) + ' &middot; ' + r.entries.length + ' entr' + (r.entries.length > 1 ? 'ies' : 'y') + '</p></div>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+      '<span class="history-item-date">' + esc(r.monthName) + ' ' + r.month.split('-')[0] + '</span>' +
+      '<button class="btn-delete-report" data-id="' + r.id + '" title="Delete">🗑️</button>' +
+      '</div></div>'
+    ).join('');
+    els.historyList.querySelectorAll('.history-item').forEach(item => {
+      item.addEventListener('click', async (e) => {
+        if (e.target.classList.contains('btn-delete-report')) {
+          const id = e.target.dataset.id;
+          if (confirm('Ye report delete karna chahte ho?')) {
+            await deleteReport(id);
+            renderHistory();
+            showToast('Report delete ho gayi!', 'success');
+          }
+          return;
+        }
+        const report = reports.find(r => r.id === item.dataset.id);
+        if (report) openModal(report);
+      });
+    });
+  }
+
+  // Rename init to initProfile and adjust it
+  function initProfile() {
+    loadLogoBase64();
+    const profile = loadProfile();
+    if (profile) {
+      showProfileLocked(profile);
+    } else {
+      showProfileForm();
+    }
+    calculateKmTotal();
+  }
+
+  // ==========================
+  // DRAFT AUTO-SAVE (per month)
+  // ==========================
+  function saveDraft() {
+    const month = $('#reportMonth').value;
+    if (!month) return;
+    const rows = [];
+    els.entryBody.querySelectorAll('tr').forEach(function (tr) {
+      rows.push({
+        date: tr.querySelector('.entry-date').value,
+        from: tr.querySelector('.entry-from').value,
+        fromLoc: tr.querySelector('.entry-from-loc').value,
+        to: tr.querySelector('.entry-to').value,
+        toLoc: tr.querySelector('.entry-to-loc').value,
+        km: tr.querySelector('.entry-km').value,
+        purpose: tr.querySelector('.entry-purpose').value,
+      });
+    });
+    const draft = {
+      month: month,
+      employeeName: $('#employeeName').value,
+      designation: $('#designation').value,
+      zone: $('#zone').value,
+      location: $('#location').value,
+      reportingManager: $('#reportingManager').value,
+      rows: rows,
+    };
+    try { localStorage.setItem(DRAFT_KEY + '_' + month, JSON.stringify(draft)); } catch (e) { }
+  }
+
+  function loadDraft(month) {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY + '_' + month);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) { return null; }
+  }
+
+  function restoreDraftRows(rows) {
+    // Clear existing rows
+    els.entryBody.innerHTML = '';
+    rows.forEach(function (r, i) {
       const tr = document.createElement('tr');
       tr.innerHTML =
-        '<td><input type="date" class="entry-date" value="' + today + '"></td>' +
-        '<td class="sno">1</td>' +
-        '<td><input type="text" placeholder="From place" class="entry-from"></td>' +
-        '<td><input type="text" placeholder="Location" class="entry-from-loc"></td>' +
-        '<td><input type="text" placeholder="To place" class="entry-to"></td>' +
-        '<td><input type="text" placeholder="Location" class="entry-to-loc"></td>' +
-        '<td><input type="text" placeholder="KM" class="entry-km" inputmode="decimal" pattern="[0-9.]*"></td>' +
-        '<td><input type="text" placeholder="Purpose" class="entry-purpose"></td>' +
+        '<td><input type="date" class="entry-date" value="' + (r.date || '') + '"></td>' +
+        '<td class="sno">' + (i + 1) + '</td>' +
+        '<td><input type="text" placeholder="From place" class="entry-from" value="' + (r.from || '') + '"></td>' +
+        '<td><input type="text" placeholder="Location" class="entry-from-loc" value="' + (r.fromLoc || '') + '"></td>' +
+        '<td><input type="text" placeholder="To place" class="entry-to" value="' + (r.to || '') + '"></td>' +
+        '<td><input type="text" placeholder="Location" class="entry-to-loc" value="' + (r.toLoc || '') + '"></td>' +
+        '<td><input type="text" placeholder="KM" class="entry-km" inputmode="decimal" pattern="[0-9.]*" value="' + (r.km || '') + '"></td>' +
+        '<td><input type="text" placeholder="Purpose" class="entry-purpose" value="' + (r.purpose || '') + '"></td>' +
         '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm remove-entry-btn" title="Remove">&#x2715;</button></td>';
       els.entryBody.appendChild(tr);
-      calculateKmTotal();
-    }
-  });
+    });
+    calculateKmTotal();
+  }
 
-  await loadLogoBase64();
-  calculateKmTotal();
-}
+  // Old init function removed
 
-init();
+  // init(); // Removed redundant call
 
-}) ();
+})();
