@@ -23,7 +23,9 @@
   --danger: #e74c3c;
   --whatsapp: #25d366;
   --whatsapp-hover: #1ebe57;
-  --radius: 14px;
+  --glass: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --radius: 18px;
   --radius-sm: 10px;
   --shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -165,8 +167,11 @@ body {
   margin-bottom: 14px;
   border: 1px solid var(--border);
   position: sticky;
-  top: 0;
+  top: 10px;
   z-index: 100;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
 
 .tab-btn {
@@ -231,6 +236,12 @@ body {
   padding: 16px;
   margin-bottom: 14px;
   box-shadow: var(--shadow);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
 }
 
 .card-title {
@@ -946,22 +957,23 @@ body {
   padding-bottom: 80px;
 }
 
+.report-preview {
+  background: #fff;
+  color: #000;
+}
+
 @media print {
-  .sticky-bottom-bar {
+
+  .app-header,
+  .tabs,
+  .action-buttons,
+  .toast-container,
+  .modal-overlay,
+  .sticky-bottom-bar,
+  .profile-locked-bar,
+  .theme-toggle {
     display: none !important;
   }
-}
-
-background: #fff;
-color: #000;
-}
-
-.app-header,
-.tabs,
-.action-buttons,
-.toast-container,
-.modal-overlay {
-  display: none !important;
 }
 
 /* ---- SHARING POPUP (Android Specific) ---- */

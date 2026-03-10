@@ -3,6 +3,20 @@ import {
   doc, getDoc, setDoc, collection, query, where, getDocs, deleteDoc
 } from './firebase-config.js';
 
+// Capacitor Imports (Optional for Web)
+let Share, Filesystem, Directory;
+try {
+  const cap = window.Capacitor;
+  if (cap && cap.isNativePlatform()) {
+    // Note: In a real build, these would be available via window.Capacitor.Plugins
+    Share = cap.Plugins.Share;
+    Filesystem = cap.Plugins.Filesystem;
+    Directory = cap.Plugins.Directory;
+  }
+} catch (e) {
+  console.log('Capacitor plugins not available in web mode');
+}
+
 (function () {
   'use strict';
 
@@ -176,6 +190,11 @@ import {
   // ==========================
   // Sticky bar button triggers form submit
   document.getElementById('submitBtn').addEventListener('click', () => {
+    if (!currentUser) {
+      showToast('Please login first to generate report.', 'error');
+      els.loginOverlay.classList.add('active');
+      return;
+    }
     const data = collectFormData();
     if (!data) return;
     saveReport(data);
@@ -188,6 +207,11 @@ import {
 
   els.form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (!currentUser) {
+      showToast('Please login first to generate report.', 'error');
+      els.loginOverlay.classList.add('active');
+      return;
+    }
     const data = collectFormData();
     if (!data) return;
     saveReport(data);
@@ -294,33 +318,64 @@ import {
   }
 
   // ==========================
-  // STORAGE
+  // STORAGE (Firestore)
   // ==========================
-  function getAllReports() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-    catch { return []; }
+  async function getAllReports() {
+    if (!currentUser) return [];
+    const q = query(collection(db, 'reports'), where('uid', '==', currentUser.uid));
+    const querySnapshot = await getDocs(q);
+    const reports = [];
+    querySnapshot.forEach((doc) => {
+      reports.push({ id: doc.id, ...doc.data() });
+    });
+    return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  function deleteReport(id) {
-    const reports = getAllReports().filter(r => r.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
+  async function migrateLocalStorageToFirestore() {
+    if (!currentUser) return;
+    try {
+      const storageKey = 'ccg_dsr_reports';
+      const localData = JSON.parse(localStorage.getItem(storageKey));
+      if (localData && Array.isArray(localData) && localData.length > 0) {
+        showToast('Syncing old reports to cloud...', 'success');
+        for (const report of localData) {
+          report.uid = currentUser.uid;
+          await saveReport(report);
+        }
+        localStorage.removeItem(storageKey);
+        showToast('Old reports synced! ✅', 'success');
+      }
+    } catch (e) {
+      console.error('Migration failed', e);
+    }
   }
 
-  function saveReport(data) {
-    const reports = getAllReports();
-    const idx = reports.findIndex(r => r.month === data.month && r.employeeName === data.employeeName);
-    if (idx !== -1) { reports.splice(idx, 1); } // remove old
-    reports.unshift(data); // always add to front = latest generated
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
-    // Track last generated month
+  async function deleteReport(id) {
+    if (!currentUser) return;
+    await deleteDoc(doc(db, 'reports', id));
+  }
+
+  async function saveReport(data) {
+    if (!currentUser) return;
+    data.uid = currentUser.uid;
+    const q = query(collection(db, 'reports'),
+      where('uid', '==', currentUser.uid),
+      where('month', '==', data.month));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const existingId = querySnapshot.docs[0].id;
+      await setDoc(doc(db, 'reports', existingId), data);
+    } else {
+      await setDoc(doc(collection(db, 'reports')), data);
+    }
     try { localStorage.setItem('ccg_last_month', data.month); } catch (e) { }
   }
 
   // ==========================
   // HISTORY
   // ==========================
-  function renderHistory() {
-    const reports = getAllReports();
+  async function renderHistory() {
+    const reports = await getAllReports();
     const monthFilter = els.filterMonth.value;
     const dateFilter = els.filterDate.value;
     populateMonthFilter(reports);
@@ -332,7 +387,6 @@ import {
         (reports.length === 0 ? 'No reports yet. Create your first report!' : 'No reports match your filters.') + '</p></div>';
       return;
     }
-    filtered.sort((a, b) => b.month.localeCompare(a.month));
     els.historyList.innerHTML = filtered.map(r =>
       '<div class="history-item" data-id="' + r.id + '">' +
       '<div class="history-item-info"><h4>' + esc(r.employeeName) + '</h4>' +
@@ -343,12 +397,11 @@ import {
       '</div></div>'
     ).join('');
     els.historyList.querySelectorAll('.history-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        // If delete button clicked
+      item.addEventListener('click', async (e) => {
         if (e.target.classList.contains('btn-delete-report')) {
           const id = e.target.dataset.id;
           if (confirm('Ye report delete karna chahte ho?')) {
-            deleteReport(id);
+            await deleteReport(id);
             renderHistory();
             showToast('Report delete ho gayi!', 'success');
           }
@@ -612,9 +665,30 @@ import {
 
   async function shareWhatsAppExcel(data) {
     if (!data) { showToast('No report data.', 'error'); return; }
-    showToast('Preparing Excel for WhatsApp...', 'success');
+    showToast('Sharing to WhatsApp...', 'success');
     try {
       const result = await buildShareFile(data);
+
+      // Native Capacitor Sharing
+      if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        const base64Data = await blobToBase64(new Blob([result.buffer]));
+        const savedFile = await Filesystem.writeFile({
+          path: result.fileName,
+          data: base64Data,
+          directory: Directory.Documents
+        });
+
+        await Share.share({
+          title: 'DSR Report',
+          text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')',
+          files: [savedFile.uri],
+          dialogTitle: 'Share with WhatsApp'
+        });
+        showToast('Shared successfully!', 'success');
+        return;
+      }
+
+      // Web Share API
       const shareData = {
         files: [result.file],
         title: 'Daily Status Report',
@@ -659,6 +733,25 @@ import {
     showToast('Generating Excel...', 'success');
     try {
       const result = await buildShareFile(data);
+
+      // Native Capacitor Sharing
+      if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+        const base64Data = await blobToBase64(new Blob([result.buffer]));
+        const savedFile = await Filesystem.writeFile({
+          path: result.fileName,
+          data: base64Data,
+          directory: Directory.Documents
+        });
+
+        await Share.share({
+          title: 'DSR Report',
+          text: 'Please find the attached DSR Report.',
+          files: [savedFile.uri],
+          dialogTitle: 'Share Report'
+        });
+        showToast('Report Shared!', 'success');
+        return;
+      }
 
       // 1. Trigger Automatic Download
       const blob = new Blob([result.buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -742,18 +835,27 @@ import {
     showToast('Excel downloaded! Attach it in your email.', 'success');
   }
 
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64String = reader.result.split(',')[1];
+        resolve(base64String);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
   // ==========================
   // HELPERS
   // ==========================
   function getLastGeneratedData() {
-    const reports = getAllReports();
     // Return the most recently generated report (tracked by month)
     const lastMonth = localStorage.getItem('ccg_last_month');
-    if (lastMonth) {
-      const found = reports.find(r => r.month === lastMonth);
-      if (found) return found;
-    }
-    return reports.length > 0 ? reports[0] : null;
+    // Note: This needs to be called after data is available, 
+    // but for pre-fill it's okay to wait or use internal tracking.
+    return _lastGeneratedData;
   }
 
   function getTodayStr() {
@@ -778,7 +880,7 @@ import {
     type = type || 'success';
     const toast = document.createElement('div');
     toast.className = 'toast ' + type;
-    toast.innerHTML = '<span>' + (type === 'success' ? '&#x2705;' : '&#x26A0;&#xFE0F;') + '</span> ' + message;
+    toast.innerHTML = '<span>' + (type === 'success' ? '✅' : '⚠️') + '</span> ' + message;
     els.toastContainer.appendChild(toast);
     setTimeout(() => {
       toast.style.opacity = '0';
@@ -794,7 +896,7 @@ import {
   const themeToggle = $('#themeToggle');
   function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
-    themeToggle.textContent = theme === 'light' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+    themeToggle.textContent = theme === 'light' ? '☀️' : '🌙';
     localStorage.setItem('ccg_dsr_theme', theme);
   }
 
@@ -819,6 +921,9 @@ import {
         currentUser = null;
         els.loginOverlay.classList.add('active');
         els.pinOverlay.classList.remove('active');
+        // Reset state
+        userPin = null;
+        pinInput = '';
       }
     } catch (error) {
       console.error('Critical Auth State Change Error:', error);
@@ -850,10 +955,7 @@ import {
       resetPin();
     } catch (error) {
       console.error('Error in checkAndShowPin:', error);
-      showToast('Error loading user data. Check permissions.', 'error');
-      // Force hide login overlay even on error so user isn't stuck if we want to bypass,
-      // but better to keep them there if it's a critical error.
-      // For now, let's keep it stuck so we can see the error.
+      showToast('Error loading user data.', 'error');
     }
   }
 
@@ -868,7 +970,11 @@ import {
     $('#toggleAuthBtn').addEventListener('click', toggleAuthMode);
   }
 
-  els.toggleAuthBtn.addEventListener('click', toggleAuthMode);
+  $('#toggleAuthBtn').addEventListener('click', toggleAuthMode);
+
+  // Register these listeners globally
+  els.saveProfileBtn.addEventListener('click', saveProfile);
+  els.editProfileBtn.addEventListener('click', showProfileForm);
 
   els.authForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -967,7 +1073,6 @@ import {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
     showProfileLocked(profile);
     showToast('Profile saved!', 'success');
-    saveDraft(); // also save draft to keep sync
   }
 
   function showProfileForm() {
@@ -981,7 +1086,7 @@ import {
     els.profileNameDisplay.textContent = profile.name;
     els.profileSubDisplay.textContent = (profile.designation || '') + (profile.location ? ' • ' + profile.location : '');
 
-    // Fill form fields too
+    // Fill form fields
     $('#employeeName').value = profile.name || '';
     $('#designation').value = profile.designation || '';
     $('#zone').value = profile.zone || '';
@@ -990,8 +1095,9 @@ import {
   }
 
   async function initApp() {
-    // 1. Core Profile/Logo Initialization
-    await loadLogoBase64();
+    console.log('Initializing Application...');
+
+    // 1. Initial Profile State
     const profile = loadProfile();
     if (profile) {
       showProfileLocked(profile);
@@ -999,11 +1105,10 @@ import {
       showProfileForm();
     }
 
-    // 2. Data Migration & Monthly Setup
+    // 2. Load Old Data & Monthly Setup
+    await loadLogoBase64();
     await migrateLocalStorageToFirestore();
-    calculateKmTotal();
 
-    const today = getTodayStr();
     const now = new Date();
     const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     if (!$('#reportMonth').value) {
@@ -1022,26 +1127,26 @@ import {
       if (draft.rows && draft.rows.length > 0) {
         restoreDraftRows(draft.rows);
       } else {
+        els.entryBody.innerHTML = '';
         addEntryRow();
       }
     } else {
-      // No draft: prefill from last saved report (employee info only)
-      const lastReport = getLastGeneratedData();
-      if (lastReport) {
-        $('#employeeName').value = lastReport.employeeName || '';
-        $('#designation').value = lastReport.designation || '';
-        $('#zone').value = lastReport.zone || '';
-        $('#location').value = lastReport.location || '';
-        $('#reportingManager').value = lastReport.reportingManager || '';
+      // Prefill from Firestore if possible, else just empty row
+      const reports = await getAllReports();
+      if (reports.length > 0) {
+        const last = reports[0];
+        $('#employeeName').value = last.employeeName || '';
+        $('#designation').value = last.designation || '';
+        $('#zone').value = last.zone || '';
+        $('#location').value = last.location || '';
+        $('#reportingManager').value = last.reportingManager || '';
       }
+      els.entryBody.innerHTML = '';
       addEntryRow();
     }
 
-    // 4. Wire Global Events (only once)
+    // 4. Global Event Wiring (only once)
     if (!window._initDone) {
-      els.saveProfileBtn.addEventListener('click', saveProfile);
-      els.editProfileBtn.addEventListener('click', showProfileForm);
-
       $('#reportMonth').addEventListener('change', function () {
         const m = this.value;
         const d = loadDraft(m);
@@ -1157,18 +1262,6 @@ import {
     });
   }
 
-  // Rename init to initProfile and adjust it
-  function initProfile() {
-    loadLogoBase64();
-    const profile = loadProfile();
-    if (profile) {
-      showProfileLocked(profile);
-    } else {
-      showProfileForm();
-    }
-    calculateKmTotal();
-  }
-
   // ==========================
   // DRAFT AUTO-SAVE (per month)
   // ==========================
@@ -1188,13 +1281,13 @@ import {
       });
     });
     const draft = {
-      month: month,
+      month,
       employeeName: $('#employeeName').value,
       designation: $('#designation').value,
       zone: $('#zone').value,
       location: $('#location').value,
       reportingManager: $('#reportingManager').value,
-      rows: rows,
+      rows,
     };
     try { localStorage.setItem(DRAFT_KEY + '_' + month, JSON.stringify(draft)); } catch (e) { }
   }
@@ -1218,16 +1311,12 @@ import {
         '<td><input type="text" placeholder="Location" class="entry-from-loc" value="' + (r.fromLoc || '') + '"></td>' +
         '<td><input type="text" placeholder="To place" class="entry-to" value="' + (r.to || '') + '"></td>' +
         '<td><input type="text" placeholder="Location" class="entry-to-loc" value="' + (r.toLoc || '') + '"></td>' +
-        '<td><input type="text" placeholder="KM" class="entry-km" inputmode="decimal" pattern="[0-9.]*" value="' + (r.km || '') + '"></td>' +
+        '<td><input type="text" placeholder="KM" class="entry-km" inputmode="decimal" value="' + (r.km || '') + '"></td>' +
         '<td><input type="text" placeholder="Purpose" class="entry-purpose" value="' + (r.purpose || '') + '"></td>' +
         '<td style="text-align:center;"><button type="button" class="btn btn-danger btn-sm remove-entry-btn" title="Remove">&#x2715;</button></td>';
       els.entryBody.appendChild(tr);
     });
     calculateKmTotal();
   }
-
-  // Old init function removed
-
-  // init(); // Removed redundant call
 
 })();
