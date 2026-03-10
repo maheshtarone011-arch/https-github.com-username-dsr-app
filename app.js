@@ -779,14 +779,14 @@ try {
 
         if (gmailBtn) {
           gmailBtn.onclick = () => {
-            const url = 'intent:#Intent;action=android.intent.action.SENDTO;dat=mailto:;package=com.google.android.gm;S.android.intent.extra.SUBJECT=' + subject + ';S.android.intent.extra.TEXT=' + body + ';end';
+            const url = 'mailto:?subject=' + subject + '&body=' + body;
             window.open(url, '_system');
           };
         }
 
         if (outlookBtn) {
           outlookBtn.onclick = () => {
-            const url = 'intent:#Intent;action=android.intent.action.SENDTO;dat=mailto:;package=com.microsoft.office.outlook;S.android.intent.extra.SUBJECT=' + subject + ';S.android.intent.extra.TEXT=' + body + ';end';
+            const url = 'mailto:?subject=' + subject + '&body=' + body;
             window.open(url, '_system');
           };
         }
