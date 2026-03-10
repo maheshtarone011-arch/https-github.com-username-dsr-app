@@ -200,8 +200,10 @@ try {
     saveReport(data);
     _lastGeneratedData = data; // store in memory
     if (els.filterMonth) els.filterMonth.value = data.month;
-    els.reportSection.classList.add('visible');
-    els.reportSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Directly trigger Excel opening flow as requested
+    shareGeneralExcel(data);
+
     showToast('Report generated & saved!', 'success');
   });
 
@@ -217,8 +219,10 @@ try {
     saveReport(data);
     _lastGeneratedData = data; // store in memory
     if (els.filterMonth) els.filterMonth.value = data.month;
-    els.reportSection.classList.add('visible');
-    els.reportSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Directly trigger Excel opening flow as requested
+    shareGeneralExcel(data);
+
     showToast('Report generated & saved!', 'success');
   });
 
