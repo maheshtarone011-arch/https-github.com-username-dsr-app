@@ -661,15 +661,28 @@ try {
         const savedFile = await Filesystem.writeFile({
           path: result.fileName,
           data: base64Data,
-          directory: Directory.Documents
+          directory: Directory.Cache
         });
 
+        console.log('File saved to:', savedFile.uri);
         if (FileOpener) {
-          await FileOpener.open({
-            filePath: savedFile.uri,
-            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-          });
-          showToast('Opening Excel...', 'success');
+          try {
+            await FileOpener.open({
+              filePath: savedFile.uri,
+              contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            showToast('Opening Excel...', 'success');
+          } catch (openErr) {
+            console.error('FileOpener Error:', openErr);
+            showToast('Open failed: ' + (openErr.message || openErr), 'error');
+            // Fallback to share
+            await Share.share({
+              title: 'DSR Report',
+              text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')',
+              files: [savedFile.uri],
+              dialogTitle: 'Share with WhatsApp'
+            });
+          }
         } else {
           await Share.share({
             title: 'DSR Report',
@@ -734,15 +747,29 @@ try {
         const savedFile = await Filesystem.writeFile({
           path: result.fileName,
           data: base64Data,
-          directory: Directory.Documents
+          directory: Directory.Cache
         });
 
+        console.log('File saved to:', savedFile.uri);
         if (FileOpener) {
-          await FileOpener.open({
-            filePath: savedFile.uri,
-            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-          });
-          showToast('Opening Excel...', 'success');
+          try {
+            await FileOpener.open({
+              filePath: savedFile.uri,
+              contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            });
+            showToast('Opening Excel...', 'success');
+          } catch (openErr) {
+            console.error('FileOpener Error:', openErr);
+            showToast('Open failed: ' + (openErr.message || openErr), 'error');
+            // Fallback to share
+            await Share.share({
+              title: 'DSR Report',
+              text: 'Please find the attached DSR Report.',
+              files: [savedFile.uri],
+              url: savedFile.uri, // Syncing with www/app.js
+              dialogTitle: 'Share Report'
+            });
+          }
         } else {
           await Share.share({
             title: 'DSR Report',
