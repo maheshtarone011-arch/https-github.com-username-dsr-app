@@ -1,7 +1,4 @@
-import {
-  auth, db, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged,
-  doc, getDoc, setDoc, collection, query, where, getDocs, deleteDoc
-} from './firebase-config.js';
+// Firebase removed as per user request
 
 // Capacitor Imports (Optional for Web)
 let Share, Filesystem, Directory;
@@ -20,13 +17,11 @@ try {
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'ccg_dsr_reports';
-  const DRAFT_KEY = 'ccg_dsr_draft';
   const PROFILE_KEY = 'ccg_dsr_profile';
+  const DRAFT_KEY = 'ccg_dsr_draft';
+  const STORAGE_KEY = 'ccg_dsr_history';
 
-  let currentUser = null;
-  let userPin = null;
-  let pinInput = '';
+  // Auth variables removed
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
@@ -51,19 +46,7 @@ try {
     modalWhatsapp: $('#modalShareWhatsapp'),
     toastContainer: $('#toastContainer'),
     kmTotalDisplay: $('#kmTotalDisplay'),
-    // Auth elements
-    loginOverlay: $('#loginOverlay'),
-    pinOverlay: $('#pinOverlay'),
-    authForm: $('#authForm'),
-    authTitle: $('#authTitle'),
-    authSubtitle: $('#authSubtitle'),
-    authEmail: $('#authEmail'),
-    authPassword: $('#authPassword'),
-    toggleAuthBtn: $('#toggleAuthBtn'),
-    authToggleText: $('#authToggleText'),
-    pinDisplay: $('#pinDisplay'),
-    numPad: $('#numPad'),
-    logoutBtn: $('#logoutBtn'),
+    // Auth elements removed
     // Profile elements
     saveProfileBtn: $('#saveProfileBtn'),
     editProfileBtn: $('#editProfileBtn'),
@@ -74,7 +57,6 @@ try {
   };
 
   let _lastGeneratedData = null;
-  let isSignupMode = false;
 
   let currentModalData = null;
   let logoBase64 = null;
@@ -914,144 +896,7 @@ try {
     applyTheme(current === 'dark' ? 'light' : 'dark');
   });
 
-  // ==========================
-  // AUTHENTICATION & PIN
-  // ==========================
-  onAuthStateChanged(auth, async (user) => {
-    try {
-      if (user) {
-        console.log('User logged in:', user.uid);
-        currentUser = user;
-        await checkAndShowPin();
-      } else {
-        console.log('No user logged in');
-        currentUser = null;
-        els.loginOverlay.classList.add('active');
-        els.pinOverlay.classList.remove('active');
-        // Reset state
-        userPin = null;
-        pinInput = '';
-      }
-    } catch (error) {
-      console.error('Critical Auth State Change Error:', error);
-      showToast('Authentication error. Please refresh.', 'error');
-    }
-  });
-
-  async function checkAndShowPin() {
-    try {
-      console.log('Checking PIN for user:', currentUser.uid);
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const userData = userDoc.data();
-
-      if (userData && userData.pin) {
-        console.log('Existing PIN found');
-        userPin = userData.pin;
-        els.loginOverlay.classList.remove('active');
-        els.pinOverlay.classList.add('active');
-        $('#pinTitle').textContent = 'Enter PIN';
-        $('#pinSubtitle').textContent = 'Verify your identity';
-      } else {
-        console.log('No PIN found, showing setup');
-        userPin = null;
-        els.loginOverlay.classList.remove('active');
-        els.pinOverlay.classList.add('active');
-        $('#pinTitle').textContent = 'Setup PIN';
-        $('#pinSubtitle').textContent = 'Create a 4-digit PIN for security';
-      }
-      resetPin();
-    } catch (error) {
-      console.error('Error in checkAndShowPin:', error);
-      showToast('Error loading user data.', 'error');
-    }
-  }
-
-  function toggleAuthMode() {
-    isSignupMode = !isSignupMode;
-    els.authTitle.textContent = isSignupMode ? 'Create Account' : 'DSR Login';
-    els.authSubtitle.textContent = isSignupMode ? 'Join Color Cloud Healthcare' : 'Welcome back! Please sign in.';
-    els.authToggleText.innerHTML = isSignupMode ?
-      'Already have an account? <span id="toggleAuthBtn">Login</span>' :
-      'Don\'t have an account? <span id="toggleAuthBtn">Sign Up</span>';
-    // Re-attach listener because innerHTML wipes it
-    $('#toggleAuthBtn').addEventListener('click', toggleAuthMode);
-  }
-
-  $('#toggleAuthBtn').addEventListener('click', toggleAuthMode);
-
-  // Register these listeners globally
-  els.saveProfileBtn.addEventListener('click', saveProfile);
-  els.editProfileBtn.addEventListener('click', showProfileForm);
-
-  els.authForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const email = els.authEmail.value;
-    const password = els.authPassword.value;
-
-    try {
-      if (isSignupMode) {
-        await createUserWithEmailAndPassword(auth, email, password);
-        showToast('Account created successfully!', 'success');
-      } else {
-        await signInWithEmailAndPassword(auth, email, password);
-        showToast('Logged in successfully!', 'success');
-      }
-    } catch (error) {
-      showToast(error.message, 'error');
-    }
-  });
-
-  els.numPad.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.num-btn');
-    if (!btn) return;
-    const val = btn.dataset.val;
-
-    if (val === 'clear') {
-      pinInput = '';
-    } else if (val === 'delete') {
-      pinInput = pinInput.slice(0, -1);
-    } else if (pinInput.length < 4) {
-      pinInput += val;
-    }
-
-    updatePinDisplay();
-
-    if (pinInput.length === 4) {
-      if (!userPin) {
-        // Setting up PIN
-        await setDoc(doc(db, 'users', currentUser.uid), { pin: pinInput }, { merge: true });
-        userPin = pinInput;
-        showToast('PIN set successfully!', 'success');
-        els.pinOverlay.classList.remove('active');
-        initApp();
-      } else if (pinInput === userPin) {
-        // Correct PIN
-        els.pinOverlay.classList.remove('active');
-        initApp();
-      } else {
-        // Wrong PIN
-        showToast('Incorrect PIN', 'error');
-        pinInput = '';
-        setTimeout(updatePinDisplay, 300);
-      }
-    }
-  });
-
-  function updatePinDisplay() {
-    const dots = els.pinDisplay.querySelectorAll('.pin-dot');
-    dots.forEach((dot, i) => {
-      dot.classList.toggle('filled', i < pinInput.length);
-    });
-  }
-
-  function resetPin() {
-    pinInput = '';
-    updatePinDisplay();
-  }
-
-  els.logoutBtn.addEventListener('click', () => {
-    signOut(auth);
-  });
+  // PIN and Auth logic removed
 
   // ==========================
   // PROFILE MANAGEMENT
@@ -1087,20 +932,6 @@ try {
     els.profileLockedBar.style.display = 'none';
   }
 
-  function showProfileLocked(profile) {
-    els.profileFormSection.style.display = 'none';
-    els.profileLockedBar.style.display = 'flex';
-    els.profileNameDisplay.textContent = profile.name;
-    els.profileSubDisplay.textContent = (profile.designation || '') + (profile.location ? ' • ' + profile.location : '');
-
-    // Fill form fields
-    $('#employeeName').value = profile.name || '';
-    $('#designation').value = profile.designation || '';
-    $('#zone').value = profile.zone || '';
-    $('#location').value = profile.location || '';
-    $('#reportingManager').value = profile.reportingManager || '';
-  }
-
   async function initApp() {
     console.log('Initializing Application...');
 
@@ -1114,7 +945,6 @@ try {
 
     // 2. Load Old Data & Monthly Setup
     await loadLogoBase64();
-    await migrateLocalStorageToFirestore();
 
     const now = new Date();
     const currentMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -1138,7 +968,7 @@ try {
         addEntryRow();
       }
     } else {
-      // Prefill from Firestore if possible, else just empty row
+      // Prefill from local history if possible
       const reports = await getAllReports();
       if (reports.length > 0) {
         const last = reports[0];
@@ -1170,61 +1000,37 @@ try {
     calculateKmTotal();
   }
 
+  initApp();
+
   // ==========================
-  // STORAGE (Firestore)
+  // STORAGE (LocalStorage)
   // ==========================
   async function getAllReports() {
-    if (!currentUser) return [];
-    const q = query(collection(db, 'reports'), where('uid', '==', currentUser.uid));
-    const querySnapshot = await getDocs(q);
-    const reports = [];
-    querySnapshot.forEach((doc) => {
-      reports.push({ id: doc.id, ...doc.data() });
-    });
-    return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  async function migrateLocalStorageToFirestore() {
-    if (!currentUser) return;
     try {
-      const localData = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      if (localData && Array.isArray(localData) && localData.length > 0) {
-        showToast('Syncing old reports to cloud...', 'success');
-        for (const report of localData) {
-          // Add uid to local report
-          report.uid = currentUser.uid;
-          await saveReport(report);
-        }
-        // Clear local storage after successful migration to avoid re-syncing
-        localStorage.removeItem(STORAGE_KEY);
-        showToast('Old reports synced! ✅', 'success');
-      }
-    } catch (e) {
-      console.error('Migration failed', e);
-    }
+      const raw = localStorage.getItem(STORAGE_KEY);
+      const reports = raw ? JSON.parse(raw) : [];
+      return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    } catch (e) { return []; }
   }
 
   async function deleteReport(id) {
-    if (!currentUser) return;
-    await deleteDoc(doc(db, 'reports', id));
+    let reports = await getAllReports();
+    reports = reports.filter(r => r.id !== id);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
   }
 
   async function saveReport(data) {
-    if (!currentUser) return;
-    data.uid = currentUser.uid;
-    // Check if report for this month exists
-    const q = query(collection(db, 'reports'),
-      where('uid', '==', currentUser.uid),
-      where('month', '==', data.month));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      // Overwrite existing
-      const existingId = querySnapshot.docs[0].id;
-      await setDoc(doc(db, 'reports', existingId), data);
+    let reports = await getAllReports();
+    // Use month+year as ID or a random string if month is used as unique
+    const existingIndex = reports.findIndex(r => r.month === data.month);
+
+    if (existingIndex !== -1) {
+      reports[existingIndex] = { ...data, id: reports[existingIndex].id };
     } else {
-      // Create new
-      await setDoc(doc(collection(db, 'reports')), data);
+      data.id = 'report_' + Date.now();
+      reports.push(data);
     }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(reports));
     // Track last generated month locally
     try { localStorage.setItem('ccg_last_month', data.month); } catch (e) { }
   }
