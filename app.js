@@ -1,14 +1,14 @@
 // Firebase removed as per user request
 
 // Capacitor Imports (Optional for Web)
-let Share, Filesystem, Directory;
+let Share, Filesystem, Directory, FileOpener;
 try {
   const cap = window.Capacitor;
   if (cap && cap.isNativePlatform()) {
-    // Note: In a real build, these would be available via window.Capacitor.Plugins
     Share = cap.Plugins.Share;
     Filesystem = cap.Plugins.Filesystem;
     Directory = cap.Plugins.Directory;
+    FileOpener = cap.Plugins.FileOpener;
   }
 } catch (e) {
   console.log('Capacitor plugins not available in web mode');
@@ -664,13 +664,21 @@ try {
           directory: Directory.Documents
         });
 
-        await Share.share({
-          title: 'DSR Report',
-          text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')',
-          files: [savedFile.uri],
-          dialogTitle: 'Share with WhatsApp'
-        });
-        showToast('Shared successfully!', 'success');
+        if (FileOpener) {
+          await FileOpener.open({
+            filePath: savedFile.uri,
+            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          });
+          showToast('Opening Excel...', 'success');
+        } else {
+          await Share.share({
+            title: 'DSR Report',
+            text: 'Report for ' + data.employeeName + ' (' + data.monthName + ')',
+            files: [savedFile.uri],
+            dialogTitle: 'Share with WhatsApp'
+          });
+          showToast('Shared successfully!', 'success');
+        }
         return;
       }
 
@@ -729,14 +737,22 @@ try {
           directory: Directory.Documents
         });
 
-        await Share.share({
-          title: 'DSR Report',
-          text: 'Please find the attached DSR Report.',
-          files: [savedFile.uri],
-          url: savedFile.uri, // Syncing with www/app.js
-          dialogTitle: 'Share Report'
-        });
-        showToast('Report Shared!', 'success');
+        if (FileOpener) {
+          await FileOpener.open({
+            filePath: savedFile.uri,
+            contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          });
+          showToast('Opening Excel...', 'success');
+        } else {
+          await Share.share({
+            title: 'DSR Report',
+            text: 'Please find the attached DSR Report.',
+            files: [savedFile.uri],
+            url: savedFile.uri, // Syncing with www/app.js
+            dialogTitle: 'Share Report'
+          });
+          showToast('Report Shared!', 'success');
+        }
         // Removed return to allow the custom popup to show
       }
 
