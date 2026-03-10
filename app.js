@@ -747,10 +747,11 @@ try {
           title: 'DSR Report',
           text: 'Please find the attached DSR Report.',
           files: [savedFile.uri],
+          url: savedFile.uri, // Syncing with www/app.js
           dialogTitle: 'Share Report'
         });
         showToast('Report Shared!', 'success');
-        return;
+        // Removed return to allow the custom popup to show
       }
 
       // 1. Trigger Automatic Download
@@ -778,13 +779,15 @@ try {
 
         if (gmailBtn) {
           gmailBtn.onclick = () => {
-            window.location.href = 'intent://compose?subject=' + subject + '&body=' + body + '#Intent;scheme=googlegmail;package=com.google.android.gm;end';
+            const url = 'intent:#Intent;action=android.intent.action.SENDTO;dat=mailto:;package=com.google.android.gm;S.android.intent.extra.SUBJECT=' + subject + ';S.android.intent.extra.TEXT=' + body + ';end';
+            window.open(url, '_system');
           };
         }
 
         if (outlookBtn) {
           outlookBtn.onclick = () => {
-            window.location.href = 'intent://compose?subject=' + subject + '&body=' + body + '#Intent;scheme=ms-outlook;package=com.microsoft.office.outlook;end';
+            const url = 'intent:#Intent;action=android.intent.action.SENDTO;dat=mailto:;package=com.microsoft.office.outlook;S.android.intent.extra.SUBJECT=' + subject + ';S.android.intent.extra.TEXT=' + body + ';end';
+            window.open(url, '_system');
           };
         }
 
