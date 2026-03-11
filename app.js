@@ -661,7 +661,7 @@ try {
         const savedFile = await Filesystem.writeFile({
           path: result.fileName,
           data: base64Data,
-          directory: Directory.Cache
+          directory: Directory.Documents
         });
 
         console.log('File saved to:', savedFile.uri);
@@ -747,7 +747,7 @@ try {
         const savedFile = await Filesystem.writeFile({
           path: result.fileName,
           data: base64Data,
-          directory: Directory.Cache
+          directory: Directory.Documents
         });
 
         console.log('File saved to:', savedFile.uri);
@@ -759,28 +759,28 @@ try {
             });
             showToast('Opening Excel...', 'success');
           } catch (openErr) {
-            console.error('FileOpener Error:', openErr);
-            showToast('Open failed: ' + (openErr.message || openErr), 'error');
-            // Fallback to share
+            console.log('FileOpener failed, trying share fallback', openErr);
+            showToast('Try manual share...', 'error');
             await Share.share({
               title: 'DSR Report',
               text: 'Please find the attached DSR Report.',
               files: [savedFile.uri],
-              url: savedFile.uri, // Syncing with www/app.js
+              url: savedFile.uri,
               dialogTitle: 'Share Report'
             });
+            showToast('Report Shared!', 'success');
           }
         } else {
           await Share.share({
             title: 'DSR Report',
             text: 'Please find the attached DSR Report.',
             files: [savedFile.uri],
-            url: savedFile.uri, // Syncing with www/app.js
+            url: savedFile.uri,
             dialogTitle: 'Share Report'
           });
           showToast('Report Shared!', 'success');
         }
-        // Removed return to allow the custom popup to show
+        return; // Fixed: We *should* return here so it doesn't run the web fallback
       }
 
       // 1. Trigger Automatic Download
@@ -850,6 +850,7 @@ try {
   const modalShareBtn = $('#modalShare');
   if (modalShareBtn) {
     modalShareBtn.addEventListener('click', () => {
+      console.log('Share + Excel button clicked');
       if (currentModalData) shareGeneralExcel(currentModalData);
     });
   }
