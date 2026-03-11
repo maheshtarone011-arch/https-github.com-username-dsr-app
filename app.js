@@ -574,7 +574,7 @@ try {
     }
   }
 
-  els.modalExcel.addEventListener('click', () => { if (currentModalData) downloadExcel(currentModalData); });
+  els.modalExcel.addEventListener('click', () => { if (currentModalData) shareGeneralExcel(currentModalData); });
 
   // ==========================
   // WHATSAPP & SHARE
@@ -682,7 +682,7 @@ try {
     try {
       const result = await buildShareFile(data);
 
-      // Native Capacitor Sharing
+      // Native Capacitor Flow: Save to Documents and Open via FileOpener
       if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         const base64Data = await blobToBase64(new Blob([result.buffer]));
         const savedFile = await Filesystem.writeFile({
@@ -699,29 +699,22 @@ try {
               contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
             showToast('Opening Excel...', 'success');
+            return; // Success
           } catch (openErr) {
-            console.log('FileOpener failed, trying share fallback', openErr);
-            showToast('Try manual share...', 'error');
-            await Share.share({
-              title: 'DSR Report',
-              text: 'Please find the attached DSR Report.',
-              files: [savedFile.uri],
-              url: savedFile.uri,
-              dialogTitle: 'Share Report'
-            });
-            showToast('Report Shared!', 'success');
+            console.error('FileOpener failed:', openErr);
+            showToast('Opening failed, trying share...', 'error');
           }
-        } else {
-          await Share.share({
-            title: 'DSR Report',
-            text: 'Please find the attached DSR Report.',
-            files: [savedFile.uri],
-            url: savedFile.uri,
-            dialogTitle: 'Share Report'
-          });
-          showToast('Report Shared!', 'success');
         }
-        return; // Fixed: We *should* return here so it doesn't run the web fallback
+
+        // Fallback to native share if FileOpener fails or is unavailable
+        await Share.share({
+          title: 'DSR Report',
+          text: 'Please find the attached DSR Report.',
+          files: [savedFile.uri],
+          url: savedFile.uri,
+          dialogTitle: 'Open/Share Report'
+        });
+        return;
       }
 
       // 1. Trigger Automatic Download
