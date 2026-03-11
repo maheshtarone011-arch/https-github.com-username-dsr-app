@@ -172,11 +172,6 @@ try {
   // ==========================
   // Sticky bar button triggers form submit
   document.getElementById('submitBtn').addEventListener('click', () => {
-    if (!currentUser) {
-      showToast('Please login first to generate report.', 'error');
-      els.loginOverlay.classList.add('active');
-      return;
-    }
     const data = collectFormData();
     if (!data) return;
     saveReport(data);
@@ -191,11 +186,6 @@ try {
 
   els.form.addEventListener('submit', (e) => {
     e.preventDefault();
-    if (!currentUser) {
-      showToast('Please login first to generate report.', 'error');
-      els.loginOverlay.classList.add('active');
-      return;
-    }
     const data = collectFormData();
     if (!data) return;
     saveReport(data);
@@ -306,56 +296,7 @@ try {
   // ==========================
   // STORAGE (Firestore)
   // ==========================
-  async function getAllReports() {
-    if (!currentUser) return [];
-    const q = query(collection(db, 'reports'), where('uid', '==', currentUser.uid));
-    const querySnapshot = await getDocs(q);
-    const reports = [];
-    querySnapshot.forEach((doc) => {
-      reports.push({ id: doc.id, ...doc.data() });
-    });
-    return reports.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  }
-
-  async function migrateLocalStorageToFirestore() {
-    if (!currentUser) return;
-    try {
-      const storageKey = 'ccg_dsr_reports';
-      const localData = JSON.parse(localStorage.getItem(storageKey));
-      if (localData && Array.isArray(localData) && localData.length > 0) {
-        showToast('Syncing old reports to cloud...', 'success');
-        for (const report of localData) {
-          report.uid = currentUser.uid;
-          await saveReport(report);
-        }
-        localStorage.removeItem(storageKey);
-        showToast('Old reports synced! ✅', 'success');
-      }
-    } catch (e) {
-      console.error('Migration failed', e);
-    }
-  }
-
-  async function deleteReport(id) {
-    if (!currentUser) return;
-    await deleteDoc(doc(db, 'reports', id));
-  }
-
-  async function saveReport(data) {
-    if (!currentUser) return;
-    data.uid = currentUser.uid;
-    const q = query(collection(db, 'reports'),
-      where('uid', '==', currentUser.uid),
-      where('month', '==', data.month));
-    const querySnapshot = await getDocs(q);
-    if (!querySnapshot.empty) {
-      const existingId = querySnapshot.docs[0].id;
-      await setDoc(doc(db, 'reports', existingId), data);
-    } else {
-      await setDoc(doc(collection(db, 'reports')), data);
-    }
-    try { localStorage.setItem('ccg_last_month', data.month); } catch (e) { }
-  }
+  // Firestore-based storage functions removed in favor of LocalStorage versions below
 
   // ==========================
   // HISTORY
@@ -1028,6 +969,9 @@ try {
 
     // 4. Global Event Wiring (only once)
     if (!window._initDone) {
+      els.saveProfileBtn.addEventListener('click', saveProfile);
+      els.editProfileBtn.addEventListener('click', showProfileForm);
+
       $('#reportMonth').addEventListener('change', function () {
         const m = this.value;
         const d = loadDraft(m);
