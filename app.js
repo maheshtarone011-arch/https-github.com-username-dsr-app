@@ -682,7 +682,7 @@ try {
     try {
       const result = await buildShareFile(data);
 
-      // Native Capacitor Flow: Save to Documents and Open via FileOpener
+      // Native Capacitor Flow: Save to Documents and show "Open with" chooser
       if (window.Capacitor && window.Capacitor.isNativePlatform()) {
         const base64Data = await blobToBase64(new Blob([result.buffer]));
         const savedFile = await Filesystem.writeFile({
@@ -692,28 +692,15 @@ try {
         });
 
         console.log('File saved to:', savedFile.uri);
-        if (FileOpener) {
-          try {
-            await FileOpener.open({
-              filePath: savedFile.uri,
-              contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            });
-            showToast('Opening Excel...', 'success');
-            return; // Success
-          } catch (openErr) {
-            console.error('FileOpener failed:', openErr);
-            showToast('Opening failed, trying share...', 'error');
-          }
-        }
-
-        // Fallback to native share if FileOpener fails or is unavailable
+        // Use Share.share() to show Android "Open with" chooser dialog
+        // This lets user pick Excel, Google Sheets, etc.
         await Share.share({
-          title: 'DSR Report',
-          text: 'Please find the attached DSR Report.',
+          title: 'DSR Report - ' + data.employeeName,
+          text: 'DSR Report for ' + data.monthName,
           files: [savedFile.uri],
-          url: savedFile.uri,
-          dialogTitle: 'Open/Share Report'
+          dialogTitle: 'Open Excel with...'
         });
+        showToast('Excel file ready! Choose app to open.', 'success');
         return;
       }
 
